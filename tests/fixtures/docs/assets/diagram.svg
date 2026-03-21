@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-labelledby="title desc">
+  <title id="title">Garden diagram</title>
+  <desc id="desc">A sharp minimal illustration for mdgarden.</desc>
+  <rect width="640" height="360" fill="#0c0c0c" />
+  <line x1="0" y1="120" x2="640" y2="120" stroke="#232323" stroke-width="1" />
+  <line x1="0" y1="240" x2="640" y2="240" stroke="#232323" stroke-width="1" />
+  <line x1="213" y1="0" x2="213" y2="360" stroke="#232323" stroke-width="1" />
+  <line x1="427" y1="0" x2="427" y2="360" stroke="#232323" stroke-width="1" />
+  <rect x="48" y="44" width="6" height="6" fill="#e54d2e" />
+  <text x="68" y="52" font-family="system-ui, sans-serif" font-weight="600" font-size="14" fill="#8a8a88" letter-spacing="0.04em">MDGARDEN</text>
+  <rect x="213" y="120" width="214" height="120" fill="#161616" />
+  <circle cx="320" cy="180" r="28" fill="none" stroke="#e54d2e" stroke-width="1.5" />
+  <line x1="320" y1="152" x2="320" y2="148" stroke="#e54d2e" stroke-width="1.5" />
+  <line x1="320" y1="212" x2="320" y2="208" stroke="#e54d2e" stroke-width="1.5" />
+  <line x1="292" y1="180" x2="288" y2="180" stroke="#e54d2e" stroke-width="1.5" />
+  <line x1="352" y1="180" x2="348" y2="180" stroke="#e54d2e" stroke-width="1.5" />
+  <rect x="80" y="280" width="120" height="1" fill="#525250" />
+  <rect x="80" y="296" width="80" height="1" fill="#353533" />
+  <rect x="80" y="312" width="100" height="1" fill="#353533" />
+  <rect x="440" y="52" width="140" height="1" fill="#525250" />
+  <rect x="440" y="68" width="100" height="1" fill="#353533" />
+  <rect x="440" y="84" width="120" height="1" fill="#353533" />
+</svg>

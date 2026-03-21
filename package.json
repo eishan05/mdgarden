@@ -1,0 +1,55 @@
+{
+  "name": "mdgarden",
+  "version": "0.1.0",
+  "description": "Lightweight local markdown browser CLI with a polished multi-pane reader.",
+  "type": "module",
+  "bin": {
+    "mdgarden": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "rimraf dist .vite",
+    "build": "npm run clean && vite build && tsc -p tsconfig.node.json && chmod +x dist/cli.js",
+    "check": "tsc -p tsconfig.node.json --noEmit",
+    "test:cli": "node tests/check-cli-permissions.mjs",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test": "npm run test:unit && npm run build && npm run test:cli && npm run test:e2e"
+  },
+  "keywords": [
+    "markdown",
+    "cli",
+    "viewer",
+    "local"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "express": "^5.1.0",
+    "open": "^10.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-sanitize": "^6.0.0",
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "rimraf": "^6.1.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.4",
+    "vitest": "^4.0.8"
+  }
+}
