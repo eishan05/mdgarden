@@ -2,6 +2,8 @@
 
 `mdgarden` is a lightweight local markdown browser for a folder of notes or docs. It scans `.md` and `.markdown` files, opens them in a browser UI, follows relative links and images, supports split panes, and refreshes when files change.
 
+![mdgarden diagram](./tests/fixtures/docs/assets/diagram.svg)
+
 ## Install
 
 Requires Node.js 20+.
