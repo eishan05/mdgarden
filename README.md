@@ -9,6 +9,8 @@
 Requires Node.js 20+.
 
 ```bash
+git clone https://github.com/eishan05/mdgarden.git
+cd mdgarden
 npm install
 npm run build
 npm link
