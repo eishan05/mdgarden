@@ -30,9 +30,9 @@ test("starts with folders collapsed and prompts the user to open a markdown file
     await page.goto(baseUrl);
 
     await expect(page.locator(".tree-directory[open]")).toHaveCount(0);
-    await expect(page.locator(".empty-pane")).toContainText("Open a markdown file");
-    await expect(page.locator(".empty-pane")).toContainText(
-      "Expand the folders in the sidebar to get started."
+    await expect(page.locator(".empty-state")).toContainText("Open a markdown file");
+    await expect(page.locator(".empty-state")).toContainText(
+      "Select a file from the sidebar to get started."
     );
 
     const nestedDocument = page.getByRole("button", { name: "Open guides/setup.md" });
@@ -47,7 +47,7 @@ test("starts with folders collapsed and prompts the user to open a markdown file
   }
 });
 
-test("opens markdown files side by side and refreshes on change", async ({ page }) => {
+test("opens markdown files and refreshes on change", async ({ page }) => {
   const workspacePath = await mkdtemp(path.join(os.tmpdir(), "mdgarden-e2e-"));
   await cp(fixturePath, workspacePath, { recursive: true });
 
@@ -66,27 +66,23 @@ test("opens markdown files side by side and refreshes on change", async ({ page 
 
     await page.goto(baseUrl);
     await page.getByRole("button", { name: "Open README.md" }).click();
-    await expect(page.locator(".pane").first().getByRole("heading", { level: 1 })).toHaveText(
-      "Garden Home"
-    );
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Garden Home");
     await expect(page.getByText('console.log("hello garden");')).toBeVisible();
     await expect(page.locator("pre code .hljs-string")).toBeVisible();
     await expect(page.locator('img[alt="Garden diagram"]')).toBeVisible();
 
     await page.locator(".tree-directory summary").filter({ hasText: "guides" }).click();
-    await page.getByRole("button", { name: "Split with guides/setup.md" }).click();
-    await expect(page.locator(".pane")).toHaveCount(2);
-    await expect(
-      page.locator(".pane").nth(1).getByRole("heading", { level: 1 })
-    ).toHaveText("Setup Guide");
+    await page.getByRole("button", { name: "Open guides/setup.md" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Setup Guide");
+
+    await page.getByRole("button", { name: "Open README.md" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Garden Home");
 
     const readmePath = path.join(workspacePath, "README.md");
     const originalContent = await readFile(readmePath, "utf8");
     await writeFile(readmePath, originalContent.replace("Garden Home", "Garden Home Updated"));
 
-    await expect(page.locator(".pane").first().getByRole("heading", { level: 1 })).toHaveText(
-      "Garden Home Updated"
-    );
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Garden Home Updated");
   } finally {
     serverProcess.kill("SIGTERM");
     await rm(workspacePath, { recursive: true, force: true });

@@ -1,17 +1,10 @@
-import { startTransition, useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 
 import { FileTree } from "./FileTree";
 import { MarkdownDocument } from "./MarkdownDocument";
-import type { DocumentPayload, PaneState, TreePayload } from "./types";
-import {
-  clamp,
-  createPane,
-  getDocumentTitle,
-  normalizePaneWidths,
-  rebalancePanes
-} from "./utils";
+import type { DocumentPayload, TreePayload } from "./types";
 
-const STORAGE_KEY = "mdgarden:workspace:v1";
+const STORAGE_KEY = "mdgarden:workspace:v2";
 
 type DocumentState =
   | {
@@ -34,42 +27,24 @@ interface ServerEventPayload {
   isMarkdown?: boolean;
 }
 
-interface PersistedWorkspace {
-  panes: PaneState[];
-  activePaneId: string | null;
-}
-
 export function App() {
-  const [{ panes: initialPanes, activePaneId: initialActivePaneId }] =
-    useState<PersistedWorkspace>(() => loadWorkspace());
-  const paneGroupReference = useRef<HTMLDivElement>(null);
   const [treePayload, setTreePayload] = useState<TreePayload | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
-  const [panes, setPanes] = useState<PaneState[]>(initialPanes);
-  const [activePaneId, setActivePaneId] = useState<string>(
-    initialActivePaneId ?? initialPanes[0].id
-  );
+  const [activePath, setActivePath] = useState<string | null>(() => loadActivePath());
   const [documents, setDocuments] = useState<Record<string, DocumentState>>({});
-  const [pendingHashes, setPendingHashes] = useState<Record<string, string>>({});
+  const [pendingHash, setPendingHash] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (document.documentElement.getAttribute('data-theme') as 'light' | 'dark') || 'light';
   });
-  const panesReference = useRef(panes);
-  const documentsReference = useRef(documents);
-  const deferredActivePaneId = useDeferredValue(activePaneId);
-  const activePane = panes.find((pane) => pane.id === deferredActivePaneId) ?? panes[0];
-  const openDocumentPaths = [...new Set(panes.map((pane) => pane.path).filter((panePath): panePath is string => Boolean(panePath)))];
-  const openDocumentPathsKey = openDocumentPaths.join("\n");
+  const activePathRef = useRef(activePath);
+  const documentsRef = useRef(documents);
 
-  panesReference.current = panes;
-  documentsReference.current = documents;
+  activePathRef.current = activePath;
+  documentsRef.current = documents;
 
   useEffect(() => {
-    saveWorkspace({
-      panes,
-      activePaneId
-    });
-  }, [activePaneId, panes]);
+    saveActivePath(activePath);
+  }, [activePath]);
 
   const refreshTree = useCallback(async () => {
     try {
@@ -82,17 +57,17 @@ export function App() {
   }, []);
 
   const loadDocument = useCallback(async (documentPath: string, force: boolean = false) => {
-    const existingState = documentsReference.current[documentPath];
+    const existingState = documentsRef.current[documentPath];
 
     if (!force && (existingState?.status === "ready" || existingState?.status === "loading")) {
       return;
     }
 
-    setDocuments((previousDocuments) => ({
-      ...previousDocuments,
+    setDocuments((prev) => ({
+      ...prev,
       [documentPath]: {
         status: "loading",
-        data: previousDocuments[documentPath]?.data
+        data: prev[documentPath]?.data
       }
     }));
 
@@ -102,8 +77,8 @@ export function App() {
       );
 
       startTransition(() => {
-        setDocuments((previousDocuments) => ({
-          ...previousDocuments,
+        setDocuments((prev) => ({
+          ...prev,
           [documentPath]: {
             status: "ready",
             data: nextDocument
@@ -111,35 +86,27 @@ export function App() {
         }));
       });
     } catch (error) {
-      setDocuments((previousDocuments) => ({
-        ...previousDocuments,
+      setDocuments((prev) => ({
+        ...prev,
         [documentPath]: {
           status: "error",
           error: getErrorMessage(error),
-          data: previousDocuments[documentPath]?.data
+          data: prev[documentPath]?.data
         }
       }));
     }
   }, []);
 
   const handleServerEvent = useCallback(async (event: ServerEventPayload) => {
-    if (event.type === "ready") {
+    if (event.type === "ready" || !event.path) {
       return;
     }
-
-    if (!event.path) {
-      return;
-    }
-
-    const openPaths = panesReference.current
-      .map((pane) => pane.path)
-      .filter((panePath): panePath is string => Boolean(panePath));
 
     if (event.type !== "change" || event.isMarkdown) {
       void refreshTree();
     }
 
-    if (event.isMarkdown && openPaths.includes(event.path)) {
+    if (event.isMarkdown && activePathRef.current === event.path) {
       void loadDocument(event.path, true);
     }
   }, [loadDocument, refreshTree]);
@@ -149,15 +116,10 @@ export function App() {
   }, [refreshTree]);
 
   useEffect(() => {
-    const seenDocumentPaths = new Set<string>();
-
-    for (const pane of panesReference.current) {
-      if (pane.path && !seenDocumentPaths.has(pane.path)) {
-        seenDocumentPaths.add(pane.path);
-        void loadDocument(pane.path);
-      }
+    if (activePath) {
+      void loadDocument(activePath);
     }
-  }, [loadDocument, openDocumentPathsKey]);
+  }, [activePath, loadDocument]);
 
   useEffect(() => {
     const eventSource = new EventSource("/api/events");
@@ -174,62 +136,8 @@ export function App() {
     };
   }, [handleServerEvent]);
 
-  function openInPane(documentPath: string, paneId: string = activePane.id): void {
-    setActivePaneId(paneId);
-    setPanes((previousPanes) =>
-      previousPanes.map((pane) =>
-        pane.id === paneId
-          ? {
-              ...pane,
-              path: documentPath
-            }
-          : pane
-      )
-    );
-  }
-
-  function openToSide(documentPath: string, sourcePaneId: string = activePane.id): void {
-    const nextPane = createPane(documentPath);
-
-    setPanes((previousPanes) => {
-      const sourcePaneIndex = previousPanes.findIndex((pane) => pane.id === sourcePaneId);
-
-      if (sourcePaneIndex === -1) {
-        return normalizePaneWidths([...previousPanes, nextPane]);
-      }
-
-      const nextPanes = [...previousPanes];
-      nextPanes.splice(sourcePaneIndex + 1, 0, nextPane);
-      return rebalancePanes(nextPanes);
-    });
-
-    setActivePaneId(nextPane.id);
-  }
-
-  function closePane(paneId: string): void {
-    setPanes((previousPanes) => {
-      if (previousPanes.length === 1) {
-        return [{ ...previousPanes[0], path: null, width: 1 }];
-      }
-
-      const remainingPanes = previousPanes.filter((pane) => pane.id !== paneId);
-      const nextPanes = rebalancePanes(remainingPanes);
-
-      if (activePaneId === paneId) {
-        const fallbackPane = nextPanes[Math.max(0, previousPanes.findIndex((pane) => pane.id === paneId) - 1)];
-        setActivePaneId(fallbackPane.id);
-      }
-
-      return nextPanes;
-    });
-  }
-
-  function handleHashHandled(paneId: string): void {
-    setPendingHashes((previousHashes) => {
-      const nextHashes = { ...previousHashes };
-      delete nextHashes[paneId];
-      return nextHashes;
-    });
+  function openDocument(documentPath: string): void {
+    setActivePath(documentPath);
   }
 
   function toggleTheme(): void {
@@ -239,55 +147,7 @@ export function App() {
     localStorage.setItem('mdgarden:theme', next);
   }
 
-  function beginResize(paneIndex: number, startClientX: number): void {
-    const groupElement = paneGroupReference.current;
-
-    if (!groupElement || !panes[paneIndex + 1]) {
-      return;
-    }
-
-    const totalWidth = groupElement.getBoundingClientRect().width;
-    const leftStartingWidth = panes[paneIndex].width;
-    const rightStartingWidth = panes[paneIndex + 1].width;
-    const combinedWidth = leftStartingWidth + rightStartingWidth;
-    const minimumWidth = 0.18;
-    const previousUserSelect = document.body.style.userSelect;
-    document.body.style.userSelect = "none";
-
-    const handlePointerMove = (moveEvent: MouseEvent) => {
-      moveEvent.preventDefault();
-      const delta = (moveEvent.clientX - startClientX) / totalWidth;
-      const nextLeftWidth = clamp(
-        leftStartingWidth + delta,
-        minimumWidth,
-        combinedWidth - minimumWidth
-      );
-      const nextRightWidth = combinedWidth - nextLeftWidth;
-
-      setPanes((previousPanes) =>
-        previousPanes.map((pane, currentPaneIndex) => {
-          if (currentPaneIndex === paneIndex) {
-            return { ...pane, width: nextLeftWidth };
-          }
-
-          if (currentPaneIndex === paneIndex + 1) {
-            return { ...pane, width: nextRightWidth };
-          }
-
-          return pane;
-        })
-      );
-    };
-
-    const handlePointerUp = () => {
-      document.body.style.userSelect = previousUserSelect;
-      window.removeEventListener("mousemove", handlePointerMove);
-      window.removeEventListener("mouseup", handlePointerUp);
-    };
-
-    window.addEventListener("mousemove", handlePointerMove);
-    window.addEventListener("mouseup", handlePointerUp);
-  }
+  const state = activePath ? documents[activePath] : undefined;
 
   return (
     <div className="app-shell">
@@ -296,9 +156,8 @@ export function App() {
           rootName={treePayload?.rootName ?? "mdgarden"}
           rootLabel={treePayload?.rootLabel ?? "Loading workspace..."}
           tree={treePayload?.tree ?? []}
-          activePath={activePane?.path ?? null}
-          onOpen={(documentPath) => openInPane(documentPath)}
-          onOpenToSide={(documentPath) => openToSide(documentPath)}
+          activePath={activePath}
+          onOpen={openDocument}
         />
 
         {treeError ? <p className="status-message error">{treeError}</p> : null}
@@ -321,94 +180,35 @@ export function App() {
           </button>
         </header>
 
-        <div className="pane-group" ref={paneGroupReference}>
-          {panes.map((pane, paneIndex) => {
-            const state = pane.path ? documents[pane.path] : undefined;
-
-            return (
-              <div
-                key={pane.id}
-                className={`pane ${pane.id === activePane.id ? "is-active" : ""}`}
-                style={{ width: `${pane.width * 100}%` }}
-                onClick={() => setActivePaneId(pane.id)}
-              >
-                <div className="pane-header">
-                  <div>
-                    <p className="eyebrow">Pane {paneIndex + 1}</p>
-                    <h3>{getDocumentTitle(pane.path)}</h3>
-                  </div>
-
-                  <div className="pane-actions">
-                    {pane.path ? (
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={() => openToSide(pane.path!, pane.id)}
-                      >
-                        Split
-                      </button>
-                    ) : null}
-
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      aria-label={`Close pane ${paneIndex + 1}`}
-                      onClick={() => closePane(pane.id)}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pane-body">
-                  {!pane.path ? (
-                    <div className="empty-pane">
-                      <div className="empty-pane-copy">
-                        <p className="empty-pane-title">Open a markdown file</p>
-                        <p>Expand the folders in the sidebar to get started.</p>
-                      </div>
-                    </div>
-                  ) : state?.status === "error" && !state.data ? (
-                    <div className="empty-pane error">
-                      <p>{state.error}</p>
-                    </div>
-                  ) : state?.data ? (
-                    <MarkdownDocument
-                      document={state.data}
-                      pendingHash={pendingHashes[pane.id] ?? null}
-                      onHashHandled={() => handleHashHandled(pane.id)}
-                      onOpenDocument={(documentPath, hash) => {
-                        openInPane(documentPath, pane.id);
-
-                        if (hash) {
-                          setPendingHashes((previousHashes) => ({
-                            ...previousHashes,
-                            [pane.id]: hash
-                          }));
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="empty-pane">
-                      <p>Loading document…</p>
-                    </div>
-                  )}
-                </div>
-
-                {paneIndex < panes.length - 1 ? (
-                  <button
-                    type="button"
-                    className="pane-resizer"
-                    aria-label={`Resize panes ${paneIndex + 1} and ${paneIndex + 2}`}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      beginResize(paneIndex, event.clientX);
-                    }}
-                  />
-                ) : null}
+        <div className="content-area">
+          {!activePath ? (
+            <div className="empty-state">
+              <div className="empty-state-copy">
+                <p className="empty-state-title">Open a markdown file</p>
+                <p>Select a file from the sidebar to get started.</p>
               </div>
-            );
-          })}
+            </div>
+          ) : state?.status === "error" && !state.data ? (
+            <div className="empty-state error">
+              <p>{state.error}</p>
+            </div>
+          ) : state?.data ? (
+            <MarkdownDocument
+              document={state.data}
+              pendingHash={pendingHash}
+              onHashHandled={() => setPendingHash(null)}
+              onOpenDocument={(documentPath, hash) => {
+                openDocument(documentPath);
+                if (hash) {
+                  setPendingHash(hash);
+                }
+              }}
+            />
+          ) : (
+            <div className="empty-state">
+              <p>Loading...</p>
+            </div>
+          )}
         </div>
       </main>
     </div>
@@ -426,55 +226,21 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function loadWorkspace(): PersistedWorkspace {
-  const fallbackPane = createPane();
-
+function loadActivePath(): string | null {
   if (typeof window === "undefined") {
-    return {
-      panes: [fallbackPane],
-      activePaneId: fallbackPane.id
-    };
-  }
-
-  const rawValue = window.localStorage.getItem(STORAGE_KEY);
-
-  if (!rawValue) {
-    return {
-      panes: [fallbackPane],
-      activePaneId: fallbackPane.id
-    };
+    return null;
   }
 
   try {
-    const parsedValue = JSON.parse(rawValue) as PersistedWorkspace;
-
-    if (!Array.isArray(parsedValue.panes) || parsedValue.panes.length === 0) {
-      return {
-        panes: [fallbackPane],
-        activePaneId: fallbackPane.id
-      };
-    }
-
-    return {
-      panes: normalizePaneWidths(
-        parsedValue.panes.map((pane) => ({
-          id: pane.id || createPane().id,
-          path: pane.path ?? null,
-          width: typeof pane.width === "number" ? pane.width : 1
-        }))
-      ),
-      activePaneId: parsedValue.activePaneId ?? parsedValue.panes[0].id
-    };
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
   } catch {
-    return {
-      panes: [fallbackPane],
-      activePaneId: fallbackPane.id
-    };
+    return null;
   }
 }
 
-function saveWorkspace(workspace: PersistedWorkspace): void {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+function saveActivePath(path: string | null): void {
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(path));
 }
 
 function getErrorMessage(error: unknown): string {

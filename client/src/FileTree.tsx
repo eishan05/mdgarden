@@ -6,7 +6,6 @@ interface FileTreeProps {
   tree: TreeNode[];
   activePath: string | null;
   onOpen: (path: string) => void;
-  onOpenToSide: (path: string) => void;
 }
 
 export function FileTree(props: FileTreeProps) {
@@ -31,7 +30,6 @@ export function FileTree(props: FileTreeProps) {
               depth={0}
               activePath={props.activePath}
               onOpen={props.onOpen}
-              onOpenToSide={props.onOpenToSide}
             />
           ))
         )}
@@ -45,7 +43,6 @@ interface TreeEntryProps {
   depth: number;
   activePath: string | null;
   onOpen: (path: string) => void;
-  onOpenToSide: (path: string) => void;
 }
 
 function TreeEntry(props: TreeEntryProps) {
@@ -64,7 +61,6 @@ function TreeEntry(props: TreeEntryProps) {
               depth={props.depth + 1}
               activePath={props.activePath}
               onOpen={props.onOpen}
-              onOpenToSide={props.onOpenToSide}
             />
           ))}
         </div>
@@ -84,16 +80,6 @@ function TreeEntry(props: TreeEntryProps) {
         onClick={() => props.onOpen(props.node.path)}
       >
         <span>{props.node.name}</span>
-      </button>
-
-      <button
-        type="button"
-        className="tree-file-side-button"
-        aria-label={`Split with ${props.node.path}`}
-        title="Open to side"
-        onClick={() => props.onOpenToSide(props.node.path)}
-      >
-        +
       </button>
     </div>
   );

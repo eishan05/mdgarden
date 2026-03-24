@@ -25,9 +25,3 @@ export interface DocumentPayload {
   content: string;
   updatedAt: string;
 }
-
-export interface PaneState {
-  id: string;
-  path: string | null;
-  width: number;
-}

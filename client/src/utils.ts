@@ -1,42 +1,3 @@
-import type { PaneState } from "./types";
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-export function createPane(path: string | null = null): PaneState {
-  return {
-    id: crypto.randomUUID(),
-    path,
-    width: 1
-  };
-}
-
-export function rebalancePanes(panes: PaneState[]): PaneState[] {
-  if (panes.length === 0) {
-    return [createPane()];
-  }
-
-  const width = 1 / panes.length;
-  return panes.map((pane) => ({
-    ...pane,
-    width
-  }));
-}
-
-export function normalizePaneWidths(panes: PaneState[]): PaneState[] {
-  const totalWidth = panes.reduce((total, pane) => total + pane.width, 0);
-
-  if (totalWidth <= 0) {
-    return rebalancePanes(panes);
-  }
-
-  return panes.map((pane) => ({
-    ...pane,
-    width: pane.width / totalWidth
-  }));
-}
-
 function isExternalReference(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(value) || value.startsWith("//");
 }
@@ -92,7 +53,7 @@ export function resolveAssetSource(currentDocumentPath: string, source: string):
 
 export function getDocumentTitle(documentPath: string | null): string {
   if (!documentPath) {
-    return "Untitled pane";
+    return "";
   }
 
   const segments = documentPath.split("/");
