@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
-import { access } from "node:fs/promises";
+import { watch } from "node:fs";
+import { access, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import chokidar from "chokidar";
 import express from "express";
 import open from "open";
 
@@ -114,28 +114,73 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     response.sendFile(path.join(clientDistPath, "index.html"));
   });
 
-  const watcher = chokidar.watch(rootPath, {
-    ignoreInitial: true,
-    ignored: (watchedPath) => isIgnoredPath(rootPath, watchedPath)
-  });
+  const pendingWatchEvents = new Map<string, NodeJS.Timeout>();
+  const WATCH_DEBOUNCE_MS = 50;
 
-  watcher.on("all", (eventName, changedPath) => {
-    if (!changedPath || isIgnoredPath(rootPath, changedPath)) {
-      return;
+  const fsWatcher = watch(
+    rootPath,
+    { recursive: true, persistent: true },
+    (eventType, filename) => {
+      if (!filename) {
+        return;
+      }
+
+      const absolutePath = path.join(rootPath, filename.toString());
+
+      if (isIgnoredPath(rootPath, absolutePath)) {
+        return;
+      }
+
+      const relativePath = toRelativeWorkspacePath(rootPath, absolutePath);
+
+      if (!relativePath || relativePath.startsWith("../")) {
+        return;
+      }
+
+      const key = `${eventType}:${relativePath}`;
+      const existing = pendingWatchEvents.get(key);
+
+      if (existing) {
+        clearTimeout(existing);
+      }
+
+      pendingWatchEvents.set(
+        key,
+        setTimeout(() => {
+          pendingWatchEvents.delete(key);
+          void classifyAndBroadcast(absolutePath, relativePath, eventType);
+        }, WATCH_DEBOUNCE_MS)
+      );
+    }
+  );
+
+  fsWatcher.on("error", () => {});
+
+  async function classifyAndBroadcast(
+    absolutePath: string,
+    relativePath: string,
+    eventType: string
+  ): Promise<void> {
+    let exists = true;
+
+    try {
+      await stat(absolutePath);
+    } catch {
+      exists = false;
     }
 
-    const relativePath = toRelativeWorkspacePath(rootPath, changedPath);
-
-    if (!relativePath || relativePath.startsWith("../")) {
-      return;
-    }
+    const type: ServerEvent["type"] = !exists
+      ? "remove"
+      : eventType === "rename"
+        ? "add"
+        : "change";
 
     broadcastEvent(sseClients, {
-      type: mapWatcherEvent(eventName),
+      type,
       path: relativePath,
       isMarkdown: isMarkdownPath(relativePath)
     });
-  });
+  }
 
   const port = await listenOnAvailablePort(server, options.requestedPort);
 
@@ -155,7 +200,11 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
         client.end();
       }
 
-      await watcher.close();
+      for (const timer of pendingWatchEvents.values()) {
+        clearTimeout(timer);
+      }
+      pendingWatchEvents.clear();
+      fsWatcher.close();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {
@@ -191,18 +240,6 @@ async function resolveClientDistPath(): Promise<string> {
 
 function getRequestedPath(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
-}
-
-function mapWatcherEvent(eventName: string): ServerEvent["type"] {
-  if (eventName === "add" || eventName === "addDir") {
-    return "add";
-  }
-
-  if (eventName === "unlink" || eventName === "unlinkDir") {
-    return "remove";
-  }
-
-  return "change";
 }
 
 function broadcastEvent(clients: Set<express.Response>, event: ServerEvent): void {
